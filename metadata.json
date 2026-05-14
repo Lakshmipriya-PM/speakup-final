@@ -1,0 +1,7 @@
+{
+  "name": "SpeakUp",
+  "description": "An AI-powered communication coach for public speaking practice. Select a topic, record your speech, and get instant feedback on clarity, pace, and filler words.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
