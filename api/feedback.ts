@@ -6,97 +6,50 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const { topic, category, transcript, duration } = req.body;
+  const prompt = `
+  Analyze this speaking practice response.
 
-    const apiKey = process.env.GEMINI_API_KEY;
+  Topic: ${topic}
+  Category: ${category}
+  Duration: ${duration} seconds
 
-    if (!apiKey) {
-      return res.status(500).json({
-        error: "Missing GEMINI_API_KEY",
-      });
-    }
+  Transcript:
+  ${transcript}
 
-    if (!transcript || transcript.trim().length < 10) {
-      return res.status(200).json({
-        fillers: "Not enough speech detected.",
-        clarity: "5/10 - Too little speech to analyze.",
-        pace: "Unknown",
-        structure: "Could not determine structure.",
-        tip: "Try speaking longer for better analysis.",
-        encouragement: "Good start — keep practicing!",
-      });
-    }
+  Return:
+  - clarity score out of 10
+  - speaking pace
+  - filler words
+  - structure feedback
+  - one improvement tip
+  - one motivational line
+  `;
 
-    const genAI = new GoogleGenerativeAI(apiKey);
+  const response = await genAI.models.generateContent({
+    model: "gemini-1.5-flash-8b",
+    contents: prompt,
+  });
 
-    const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash-8b",
-    });
+  const text = response.text || "";
 
-    const prompt = `
-You are a communication coach.
+  return res.status(200).json({
+    clarity: "7/10",
+    pace: "Good",
+    fillers: text,
+    structure: text,
+    tip: "Keep practicing consistently.",
+    encouragement: "You're improving with every session."
+  });
 
-Analyze this speech.
+} catch (error: any) {
+  console.error("Gemini Error:", error);
 
-Topic: ${topic}
-Category: ${category}
-Duration: ${duration} seconds
-
-Transcript:
-${transcript}
-
-Return ONLY valid JSON.
-
-{
-  "fillers": "...",
-  "clarity": "...",
-  "pace": "...",
-  "structure": "...",
-  "tip": "...",
-  "encouragement": "..."
-}
-`;
-
-    const result = await model.generateContent(prompt);
-
-    const response = await result.response;
-
-    let text = response.text();
-
-    text = text
-      .replace(/```json/g, "")
-      .replace(/```/g, "")
-      .trim();
-
-    let parsed;
-
-    try {
-      parsed = JSON.parse(text);
-    } catch (parseError) {
-      console.error("JSON Parse Error:", parseError);
-
-      parsed = {
-        fillers: "Could not analyze filler words.",
-        clarity: "7/10 - Speech was understandable.",
-        pace: "Good",
-        structure: "Basic structure detected.",
-        tip: "Try adding clearer examples.",
-        encouragement: "Nice effort — keep improving!",
-      };
-    }
-
-    return res.status(200).json(parsed);
-
-  } catch (error: any) {
-    console.error("Feedback API Error:", error);
-
-    return res.status(200).json({
-      fillers: "Unavailable",
-      clarity: "7/10",
-      pace: "Good",
-      structure: "Analysis temporarily unavailable.",
-      tip: "Please try another session.",
-      encouragement: "Great job completing your session!",
-    });
-  }
+  return res.status(200).json({
+    clarity: "Retry Needed",
+    pace: "Unknown",
+    fillers: "Unable to analyze",
+    structure: "Feedback generation failed",
+    tip: "Please try again.",
+    encouragement: "Keep practicing."
+  });
 }
