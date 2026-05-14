@@ -1,23 +1,43 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export default async function handler(req: any, res: any) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { topic, category, transcript, duration } = req.body;
+  try {
+    const { topic, category, transcript, duration } = req.body;
 
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return res.status(500).json({ error: 'GEMINI_API_KEY is not configured' });
-  }
+    const apiKey = process.env.GEMINI_API_KEY;
 
-  const genAI = new GoogleGenAI({ apiKey });
-try {
-  const prompt = `
-You are a friendly communication coach.
+    if (!apiKey) {
+      return res.status(500).json({
+        error: "Missing GEMINI_API_KEY",
+      });
+    }
 
-The user spoke on:
+    if (!transcript || transcript.trim().length < 10) {
+      return res.status(200).json({
+        fillers: "Not enough speech detected.",
+        clarity: "5/10 - Too little speech to analyze.",
+        pace: "Unknown",
+        structure: "Could not determine structure.",
+        tip: "Try speaking longer for better analysis.",
+        encouragement: "Good start — keep practicing!",
+      });
+    }
+
+    const genAI = new GoogleGenerativeAI(apiKey);
+
+    const model = genAI.getGenerativeModel({
+      model: "gemini-1.5-flash",
+    });
+
+    const prompt = `
+You are a communication coach.
+
+Analyze this speech.
+
 Topic: ${topic}
 Category: ${category}
 Duration: ${duration} seconds
@@ -25,52 +45,58 @@ Duration: ${duration} seconds
 Transcript:
 ${transcript}
 
-Return feedback ONLY in valid JSON format with:
-- fillers
-- clarity
-- pace
-- structure
-- tip
-- encouragement
+Return ONLY valid JSON.
+
+{
+  "fillers": "...",
+  "clarity": "...",
+  "pace": "...",
+  "structure": "...",
+  "tip": "...",
+  "encouragement": "..."
+}
 `;
 
-  const response = await genAI.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: prompt,
-  });
+    const result = await model.generateContent(prompt);
 
-  let text = response.text || "";
+    const response = await result.response;
 
-  // Remove markdown formatting if Gemini adds it
-  text = text.replace(/```json/g, "").replace(/```/g, "").trim();
+    let text = response.text();
 
-  // Fallback response
-  let parsed;
+    text = text
+      .replace(/```json/g, "")
+      .replace(/```/g, "")
+      .trim();
 
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    parsed = {
-      fillers: "Could not detect filler words.",
-      clarity: "7/10 - Decent clarity overall.",
+    let parsed;
+
+    try {
+      parsed = JSON.parse(text);
+    } catch (parseError) {
+      console.error("JSON Parse Error:", parseError);
+
+      parsed = {
+        fillers: "Could not analyze filler words.",
+        clarity: "7/10 - Speech was understandable.",
+        pace: "Good",
+        structure: "Basic structure detected.",
+        tip: "Try adding clearer examples.",
+        encouragement: "Nice effort — keep improving!",
+      };
+    }
+
+    return res.status(200).json(parsed);
+
+  } catch (error: any) {
+    console.error("Feedback API Error:", error);
+
+    return res.status(200).json({
+      fillers: "Unavailable",
+      clarity: "7/10",
       pace: "Good",
-      structure: "Basic structure detected.",
-      tip: "Try adding stronger examples to improve engagement.",
-      encouragement: "Great effort. Keep practicing consistently!"
-    };
+      structure: "Analysis temporarily unavailable.",
+      tip: "Please try another session.",
+      encouragement: "Great job completing your session!",
+    });
   }
-
-  return res.status(200).json(parsed);
-
-} catch (error: any) {
-  console.error("Gemini Feedback Generation Error:", error);
-
-  return res.status(200).json({
-    fillers: "Unavailable",
-    clarity: "7/10 - Feedback service temporarily unavailable.",
-    pace: "Good",
-    structure: "Could not fully analyze structure.",
-    tip: "Please try another session.",
-    encouragement: "Nice work completing your practice session!"
-  });
 }
